@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сума прописом — Конвертер гривень</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a2e;
+            background-color: #f8f9fa;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 0.95rem;
+            color: #555;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        #numberInput {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        #numberInput:focus {
+            border-color: #4a6cf7;
+        }
+
+        #numberInput::placeholder {
+            color: #aaa;
+        }
+
+        #convertBtn {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            background-color: #4a6cf7;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            white-space: nowrap;
+        }
+
+        #convertBtn:hover {
+            background-color: #3b5de7;
+        }
+
+        #convertBtn:active {
+            background-color: #2f4fd6;
+        }
+
+        #resultArea {
+            padding: 1.25rem;
+            background-color: #eef2ff;
+            border: 2px solid #c7d2fe;
+            border-radius: 8px;
+            min-height: 60px;
+            font-size: 1.05rem;
+            line-height: 1.5;
+            color: #1a1a2e;
+            word-wrap: break-word;
+        }
+
+        #resultArea:empty::before {
+            content: "Тут з'явиться результат";
+            color: #999;
+            font-style: italic;
+        }
+
+        #resultArea.error {
+            color: #dc2626;
+            border-color: #fca5a5;
+            background-color: #fef2f2;
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 1rem 0.75rem;
+            }
+
+            header h1 {
+                font-size: 1.25rem;
+            }
+
+            .input-group {
+                flex-direction: column;
+            }
+
+            #convertBtn {
+                width: 100%;
+            }
+        }
+
+        @media (min-width: 320px) and (max-width: 1920px) {
+            .container {
+                max-width: min(600px, 100%);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Сума прописом</h1>
+            <p>Перетворення числових значень у суму в українських гривнях прописом</p>
+        </header>
+
+        <div class="input-group">
+            <input
+                type="text"
+                id="numberInput"
+                maxlength="16"
+                placeholder="Введіть суму, наприклад: 1234.56"
+                autocomplete="off"
+            >
+            <button id="convertBtn">Перетворити</button>
+        </div>
+
+        <div id="resultArea"></div>
+    </div>
+
+    <script>
+        // ===== Data Models (Lookup Tables) =====
+
+        // Одиниці чоловічого роду (для мільйонів, мільярдів, одиниць)
+        const ONES_MASCULINE = ['', 'один', 'два', 'три', 'чотири', "п'ять", 'шість', 'сім', 'вісім', "дев'ять"];
+
+        // Одиниці жіночого роду (для тисяч)
+        const ONES_FEMININE = ['', 'одна', 'дві', 'три', 'чотири', "п'ять", 'шість', 'сім', 'вісім', "дев'ять"];
+
+        // Числа 10-19
+        const TEENS = ['десять', 'одинадцять', 'дванадцять', 'тринадцять', 'чотирнадцять',
+                       "п'ятнадцять", 'шістнадцять', 'сімнадцять', 'вісімнадцять', "дев'ятнадцять"];
+
+        // Десятки
+        const TENS = ['', '', 'двадцять', 'тридцять', 'сорок', "п'ятдесят",
+                      'шістдесят', 'сімдесят', 'вісімдесят', "дев'яносто"];
+
+        // Сотні
+        const HUNDREDS = ['', 'сто', 'двісті', 'триста', 'чотириста', "п'ятсот",
+                          'шістсот', 'сімсот', 'вісімсот', "дев'ятсот"];
+
+        // Розрядові слова з формами відмінювання
+        const SCALE_WORDS = {
+            thousands: ['тисяча', 'тисячі', 'тисяч'],
+            millions: ['мільйон', 'мільйони', 'мільйонів'],
+            billions: ['мільярд', 'мільярди', 'мільярдів']
+        };
+
+        // Валюта
+        const HRYVNIA_FORMS = ['гривня', 'гривні', 'гривень'];
+        const KOPIYKA_FORMS = ['копійка', 'копійки', 'копійок'];
+
+
+        // ===== Core Functions (stubs) =====
+
+        /**
+         * Валідує вхідний рядок з поля введення.
+         * @param {string} input — сирий рядок з input field
+         * @returns {{ valid: boolean, value?: number, error?: string }}
+         */
+        function validateInput(input) {
+            // 1. Перевірка на порожній рядок
+            if (input.trim() === '') {
+                return { valid: false, error: 'Введіть числове значення' };
+            }
+
+            // 2. Перевірка на від'ємне число (мінус на початку)
+            if (input.trim().startsWith('-')) {
+                return { valid: false, error: 'Значення повинно бути додатнім' };
+            }
+
+            // 3. Перевірка на недопустимі символи (дозволені: 0-9, крапка, кома)
+            if (/[^0-9.,]/.test(input.trim())) {
+                return { valid: false, error: 'Введіть коректне числове значення' };
+            }
+
+            // 4. Перевірка на не більше одного розділювача
+            const separatorCount = (input.trim().match(/[.,]/g) || []).length;
+            if (separatorCount > 1) {
+                return { valid: false, error: 'Введіть коректне числове значення' };
+            }
+
+            // 5. Заміна коми на крапку для уніфікації
+            const normalized = input.trim().replace(',', '.');
+
+            // 6. Парсинг числа
+            const value = parseFloat(normalized);
+
+            if (isNaN(value)) {
+                return { valid: false, error: 'Введіть коректне числове значення' };
+            }
+
+            // 7. Перевірка на перевищення максимуму
+            if (value > 999999999999.99) {
+                return { valid: false, error: 'Значення занадто велике' };
+            }
+
+            return { valid: true, value: value };
+        }
+
+        /**
+         * Розбиває число на цілу та дробову частини.
+         * @param {number} value — валідне число
+         * @returns {{ integerPart: number, koppiiky: number }}
+         */
+        function splitNumber(value) {
+            const integerPart = Math.floor(value);
+            let koppiiky = Math.round(Number((value - integerPart).toFixed(10)) * 100);
+
+            if (koppiiky >= 100) {
+                return { integerPart: integerPart + 1, koppiiky: 0 };
+            }
+
+            return { integerPart, koppiiky };
+        }
+
+        /**
+         * Перетворює ціле число у слова українською мовою.
+         * @param {number} n — ціле число від 0 до 999999999999
+         * @returns {string} — текст прописом, перша літера велика
+         */
+        function integerToWords(n) {
+            if (n === 0) {
+                return 'Нуль';
+            }
+
+            const parts = [];
+
+            // Мільярди
+            const billions = Math.floor(n / 1000000000);
+            if (billions > 0) {
+                parts.push(groupToWords(billions, 'masculine') + ' ' + decline(billions, SCALE_WORDS.billions));
+            }
+
+            // Мільйони
+            const millions = Math.floor((n % 1000000000) / 1000000);
+            if (millions > 0) {
+                parts.push(groupToWords(millions, 'masculine') + ' ' + decline(millions, SCALE_WORDS.millions));
+            }
+
+            // Тисячі (жіночий рід)
+            const thousands = Math.floor((n % 1000000) / 1000);
+            if (thousands > 0) {
+                parts.push(groupToWords(thousands, 'feminine') + ' ' + decline(thousands, SCALE_WORDS.thousands));
+            }
+
+            // Одиниці (без розрядного слова, жіночий рід для "гривня")
+            const ones = n % 1000;
+            if (ones > 0) {
+                parts.push(groupToWords(ones, 'feminine'));
+            }
+
+            const result = parts.join(' ');
+            return result.charAt(0).toUpperCase() + result.slice(1);
+        }
+
+        /**
+         * Перетворює групу з 1-3 цифр у слова.
+         * @param {number} group — число від 1 до 999
+         * @param {string} gender — "masculine" | "feminine"
+         * @returns {string} — слова для цієї групи
+         */
+        function groupToWords(group, gender) {
+            const parts = [];
+
+            // 1. Сотні
+            const h = Math.floor(group / 100);
+            if (h > 0) {
+                parts.push(HUNDREDS[h]);
+            }
+
+            // 2. Залишок (десятки + одиниці)
+            const remainder = group % 100;
+
+            if (remainder >= 10 && remainder <= 19) {
+                // 3. Числа 10-19 — спеціальний випадок
+                parts.push(TEENS[remainder - 10]);
+            } else {
+                // 4. Десятки
+                const t = Math.floor(remainder / 10);
+                if (t > 0) {
+                    parts.push(TENS[t]);
+                }
+
+                // 5. Одиниці з урахуванням роду
+                const u = remainder % 10;
+                if (u > 0) {
+                    const ones = gender === 'feminine' ? ONES_FEMININE : ONES_MASCULINE;
+                    parts.push(ones[u]);
+                }
+            }
+
+            return parts.join(' ');
+        }
+
+        /**
+         * Повертає правильну форму слова відповідно до числа.
+         * @param {number} n — число для якого потрібна відмінкова форма
+         * @param {string[]} forms — масив з 3 форм [одна, дві-чотири, п'ять+]
+         * @returns {string} — правильна форма слова
+         */
+        function decline(n, forms) {
+            const lastDigit = n % 10;
+            const lastTwoDigits = n % 100;
+
+            if (lastDigit === 1 && lastTwoDigits !== 11) {
+                return forms[0];
+            }
+            if (lastDigit >= 2 && lastDigit <= 4 && lastTwoDigits !== 12 && lastTwoDigits !== 13 && lastTwoDigits !== 14) {
+                return forms[1];
+            }
+            return forms[2];
+        }
+
+        /**
+         * Формує фінальний рядок результату.
+         * @param {string} hryvniWords — текст цілої частини прописом
+         * @param {number} integerPart — ціла частина числом (для відмінювання)
+         * @param {number} koppiiky — копійки числом (0-99)
+         * @returns {string} — повний форматований результат
+         */
+        function formatResult(hryvniWords, integerPart, koppiiky) {
+            const hryvniaForm = decline(integerPart, HRYVNIA_FORMS);
+            const kopiikyStr = String(koppiiky).padStart(2, '0');
+            const kopiykaForm = decline(koppiiky, KOPIYKA_FORMS);
+            const result = `${hryvniWords} ${hryvniaForm} ${kopiikyStr} ${kopiykaForm}`;
+            return result.charAt(0).toUpperCase() + result.slice(1);
+        }
+
+        /**
+         * Копіює текст у буфер обміну.
+         * @param {string} text — текст для копіювання
+         * @returns {Promise<boolean>} — true якщо успішно, false якщо помилка
+         */
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        /**
+         * Обробник натискання кнопки перетворення.
+         * Оркеструє весь процес: валідація → конвертація → відображення → копіювання → очищення.
+         */
+        async function handleConvert() {
+            const inputEl = document.getElementById('numberInput');
+            const resultEl = document.getElementById('resultArea');
+            const input = inputEl.value;
+
+            const validation = validateInput(input);
+
+            if (!validation.valid) {
+                resultEl.textContent = validation.error;
+                resultEl.classList.add('error');
+                return;
+            }
+
+            resultEl.classList.remove('error');
+
+            const { integerPart, koppiiky } = splitNumber(validation.value);
+            const hryvniWords = integerToWords(integerPart);
+            const result = formatResult(hryvniWords, integerPart, koppiiky);
+
+            resultEl.textContent = result;
+
+            const copied = await copyToClipboard(result);
+
+            if (copied) {
+                inputEl.value = '';
+            } else {
+                resultEl.textContent = result + '\nНе вдалося скопіювати автоматично';
+                inputEl.value = '';
+            }
+        }
+
+
+        // ===== Event Listeners =====
+
+        document.getElementById('convertBtn').addEventListener('click', handleConvert);
+    </script>
+</body>
+</html>
