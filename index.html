@@ -422,6 +422,12 @@
         // ===== Event Listeners =====
 
         document.getElementById('convertBtn').addEventListener('click', handleConvert);
+
+        document.getElementById('numberInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                handleConvert();
+            }
+        });
     </script>
 </body>
 </html>
